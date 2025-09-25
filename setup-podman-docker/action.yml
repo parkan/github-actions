@@ -1,0 +1,259 @@
+name: 'Setup Podman as Docker'
+description: 'Replace Docker with Podman and configure rootless operation with Docker compatibility'
+author: 'parkan'
+
+inputs:
+  disable-docker:
+    description: 'Whether to disable existing Docker installation'
+    required: false
+    default: 'true'
+  socket-path:
+    description: 'Path for Podman socket (Docker-compatible)'
+    required: false
+    default: ''
+  cache-storage:
+    description: 'Whether to cache Podman storage'
+    required: false
+    default: 'true'
+  cache-key-prefix:
+    description: 'Prefix for cache key'
+    required: false
+    default: 'podman-storage'
+
+outputs:
+  socket-path:
+    description: 'Path to Podman socket'
+    value: ${{ steps.socket.outputs.path }}
+  docker-host:
+    description: 'DOCKER_HOST environment value'
+    value: ${{ steps.socket.outputs.docker-host }}
+  podman-version:
+    description: 'Installed Podman version'
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect existing Docker
+      id: detect
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "${{ inputs.disable-docker }}" != "true" ]]; then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        if command -v docker >/dev/null 2>&1; then
+          echo "found=true" >> $GITHUB_OUTPUT
+          docker version --format '{{.Server.Version}}' 2>/dev/null || echo "Docker CLI present but daemon not running"
+        else
+          echo "found=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Disable Docker engine
+      if: inputs.disable-docker == 'true' && steps.detect.outputs.found == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Disabling Docker"
+        
+        # Stop services first
+        if systemctl is-active docker.socket >/dev/null 2>&1; then
+          sudo systemctl stop docker.socket
+        fi
+        if systemctl is-active docker >/dev/null 2>&1; then
+          sudo systemctl stop docker
+        fi
+        
+        # Disable and mask
+        sudo systemctl disable docker.socket docker 2>/dev/null || true
+        sudo systemctl mask docker.socket docker
+        
+        # Remove packages if requested (optional)
+        if [[ "${REMOVE_DOCKER_PACKAGES:-false}" == "true" ]]; then
+          sudo apt-get remove -y docker-ce-cli moby-cli 2>/dev/null || true
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Install Podman and dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Installing Podman"
+        
+        # Update package index
+        sudo apt-get update
+        
+        # Install required packages
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          podman \
+          podman-docker \
+          uidmap \
+          slirp4netns \
+          fuse-overlayfs \
+          jq
+        
+        echo "::endgroup::"
+
+    - name: Configure rootless operation
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Configuring rootless Podman"
+        
+        u=$(id -un)
+        uid=$(id -u)
+        
+        # Configure subuid/subgid with proper ranges
+        if ! grep -q "^${u}:" /etc/subuid; then
+          echo "${u}:100000:65536" | sudo tee -a /etc/subuid
+          echo "Added subuid mapping for user ${u}"
+        fi
+        
+        if ! grep -q "^${u}:" /etc/subgid; then
+          echo "${u}:100000:65536" | sudo tee -a /etc/subgid
+          echo "Added subgid mapping for user ${u}"
+        fi
+        
+        # Ensure proper ownership of runtime directory
+        if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+          sudo chown -R "${uid}:$(id -g)" "${XDG_RUNTIME_DIR}" 2>/dev/null || true
+        fi
+        
+        # Apply configuration
+        podman system migrate
+        
+        # Verify configuration
+        podman info --format json | jq -r '.host.idMappings'
+        
+        echo "::endgroup::"
+
+    - name: Determine socket path
+      id: socket
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        if [[ -n "${{ inputs.socket-path }}" ]]; then
+          SOCKET_PATH="${{ inputs.socket-path }}"
+        elif [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+          SOCKET_PATH="${XDG_RUNTIME_DIR}/podman/podman.sock"
+          mkdir -p "$(dirname "$SOCKET_PATH")"
+        else
+          # Fallback for systems without XDG_RUNTIME_DIR
+          SOCKET_PATH="/tmp/podman-${UID:-1000}.sock"
+        fi
+        
+        echo "path=${SOCKET_PATH}" >> $GITHUB_OUTPUT
+        echo "docker-host=unix://${SOCKET_PATH}" >> $GITHUB_OUTPUT
+
+    - name: Start Podman service socket
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Starting Podman service"
+        
+        SOCKET_PATH="${{ steps.socket.outputs.path }}"
+        
+        # Kill any existing podman service
+        pkill -f "podman.*system.*service" || true
+        sleep 1
+        
+        # Start service with proper logging
+        mkdir -p "${{ runner.temp }}/podman-logs"
+        nohup podman system service -t 0 "unix://${SOCKET_PATH}" \
+          > "${{ runner.temp }}/podman-logs/service.log" 2>&1 &
+        
+        SERVICE_PID=$!
+        echo "SERVICE_PID=${SERVICE_PID}" >> $GITHUB_ENV
+        
+        # Wait for socket to be ready
+        for i in {1..30}; do
+          if [[ -S "${SOCKET_PATH}" ]]; then
+            echo "Podman socket ready at: ${SOCKET_PATH}"
+            break
+          fi
+          echo "Waiting for socket... ($i/30)"
+          sleep 1
+        done
+        
+        if [[ ! -S "${SOCKET_PATH}" ]]; then
+          echo "::error::Podman socket not created after 30 seconds"
+          cat "${{ runner.temp }}/podman-logs/service.log"
+          exit 1
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Configure environment
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Set environment variables
+        echo "DOCKER_HOST=${{ steps.socket.outputs.docker-host }}" >> $GITHUB_ENV
+        echo "DOCKER_CLI_HINTS=false" >> $GITHUB_ENV
+        echo "CONTAINER_HOST=${{ steps.socket.outputs.docker-host }}" >> $GITHUB_ENV
+        
+        # Create Docker CLI config for Podman compatibility
+        mkdir -p ~/.docker
+        cat > ~/.docker/config.json <<EOF
+        {
+          "currentContext": "podman"
+        }
+        EOF
+
+    - name: Verify Podman as Docker
+      id: version
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Verifying Podman/Docker compatibility"
+        
+        # Test using both CLIs
+        echo "=== Podman version ==="
+        podman version
+        PODMAN_VERSION=$(podman version --format '{{.Version}}')
+        echo "version=${PODMAN_VERSION}" >> $GITHUB_OUTPUT
+        
+        echo -e "\n=== Docker CLI (via podman-docker) ==="
+        docker version
+        
+        echo -e "\n=== Testing basic operations ==="
+        docker run --rm alpine echo "Docker CLI works with Podman backend"
+        
+        echo -e "\n=== System info ==="
+        docker info --format '{{json .}}' | jq -r '.ServerVersion, .OperatingSystem'
+        
+        echo "::endgroup::"
+
+    - name: Cache Podman storage
+      if: inputs.cache-storage == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.local/share/containers/storage
+          ~/.config/containers
+        key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ steps.version.outputs.version }}-${{ hashFiles('**/Dockerfile', '**/devcontainer.json', '**/docker-compose.yml') }}
+        restore-keys: |
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ steps.version.outputs.version }}-
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-
+
+    - name: Output summary
+      shell: bash
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY <<EOF
+        ## Podman as Docker Setup Complete ✅
+        
+        - **Podman Version**: ${{ steps.version.outputs.version }}
+        - **Socket Path**: \`${{ steps.socket.outputs.path }}\`
+        - **DOCKER_HOST**: \`${{ steps.socket.outputs.docker-host }}\`
+        - **Storage Cached**: ${{ inputs.cache-storage }}
+        
+        ### Test Command
+        \`\`\`bash
+        DOCKER_HOST=${{ steps.socket.outputs.docker-host }} docker run --rm alpine echo "Hello from Podman"
+        \`\`\`
+        EOF

@@ -1,0 +1,146 @@
+name: Test Actions
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-podman-setup:
+    name: Test Podman Setup Action
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        disable-docker: [true, false]
+        cache: [true, false]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test Setup Podman as Docker
+        uses: ./setup-podman-docker
+        id: podman
+        with:
+          disable-docker: ${{ matrix.disable-docker }}
+          cache-storage: ${{ matrix.cache }}
+
+      - name: Verify Podman Setup
+        run: |
+          echo "Socket path: ${{ steps.podman.outputs.socket-path }}"
+          echo "Docker host: ${{ steps.podman.outputs.docker-host }}"
+          echo "Podman version: ${{ steps.podman.outputs.podman-version }}"
+          
+          # Test Docker CLI works
+          docker run --rm alpine echo "Hello from Podman backend"
+          
+          # Test Podman directly
+          podman run --rm alpine echo "Hello from Podman"
+
+  test-devcontainer-minimal:
+    name: Test Devcontainer Action (Minimal)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create minimal devcontainer
+        run: |
+          mkdir -p .devcontainer
+          cat > .devcontainer/devcontainer.json <<EOF
+          {
+            "name": "Test Container",
+            "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+            "postCreateCommand": "echo 'Container ready'"
+          }
+          EOF
+
+      - name: Test Devcontainer Action
+        uses: ./devcontainer-test
+        id: devtest
+        with:
+          workspace-folder: .
+          test-command: 'echo "Test successful" && exit 0'
+
+      - name: Verify Results
+        run: |
+          echo "Container ID: ${{ steps.devtest.outputs.container-id }}"
+          echo "Test exit code: ${{ steps.devtest.outputs.test-exit-code }}"
+          echo "Build time: ${{ steps.devtest.outputs.build-time }}s"
+
+  test-integration:
+    name: Test Full Integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create test devcontainer with Go
+        run: |
+          mkdir -p .devcontainer
+          cat > .devcontainer/devcontainer.json <<EOF
+          {
+            "name": "Go Test Container",
+            "image": "mcr.microsoft.com/devcontainers/go:1.21",
+            "features": {},
+            "postCreateCommand": "go version"
+          }
+          EOF
+          
+          # Create a simple Go test
+          mkdir -p testapp
+          cat > testapp/main.go <<'GOEOF'
+          package main
+          import "fmt"
+          func Hello() string { return "Hello, Podman!" }
+          func main() { fmt.Println(Hello()) }
+          GOEOF
+          
+          cat > testapp/main_test.go <<'GOEOF'
+          package main
+          import "testing"
+          func TestHello(t *testing.T) {
+            if got := Hello(); got != "Hello, Podman!" {
+              t.Errorf("Hello() = %v, want %v", got, "Hello, Podman!")
+            }
+          }
+          GOEOF
+          
+          cat > go.mod <<EOF
+          module testapp
+          go 1.21
+          EOF
+
+      - name: Setup Podman as Docker
+        uses: ./setup-podman-docker
+        with:
+          disable-docker: true
+
+      - name: Run Devcontainer Tests with Podman
+        uses: ./devcontainer-test
+        with:
+          workspace-folder: .
+          container-runtime: podman
+          test-command: 'cd testapp && go test -v ./...'
+
+  test-error-handling:
+    name: Test Error Handling
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test missing devcontainer.json
+        id: missing-config
+        continue-on-error: true
+        uses: ./devcontainer-test
+        with:
+          workspace-folder: .
+          test-command: 'echo "Should not run"'
+
+      - name: Verify error was caught
+        run: |
+          if [[ "${{ steps.missing-config.outcome }}" != "failure" ]]; then
+            echo "Expected failure for missing devcontainer.json"
+            exit 1
+          fi

@@ -1,0 +1,14 @@
+name: Node Devcontainer Example
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Test in Devcontainer
+        uses: parkan/github-actions/devcontainer-test@v1
+        with:
+          test-command: 'npm ci && npm test'
+          post-build-command: 'npm run build'
