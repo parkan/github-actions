@@ -70,10 +70,8 @@ runs:
         sudo systemctl disable docker.socket docker 2>/dev/null || true
         sudo systemctl mask docker.socket docker
         
-        # Remove packages if requested (optional)
-        if [[ "${REMOVE_DOCKER_PACKAGES:-false}" == "true" ]]; then
-          sudo apt-get remove -y docker-ce docker-ce-cli moby-cli 2>/dev/null || true
-        fi
+        # Remove packages
+        sudo apt-get remove -y docker-ce docker-ce-cli moby-cli 2>/dev/null || true
         
         echo "::endgroup::"
 
