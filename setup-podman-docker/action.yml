@@ -72,7 +72,7 @@ runs:
         
         # Remove packages if requested (optional)
         if [[ "${REMOVE_DOCKER_PACKAGES:-false}" == "true" ]]; then
-          sudo apt-get remove -y docker-ce-cli moby-cli 2>/dev/null || true
+          sudo apt-get remove -y docker-ce docker-ce-cli moby-cli 2>/dev/null || true
         fi
         
         echo "::endgroup::"
