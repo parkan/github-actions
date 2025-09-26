@@ -207,7 +207,7 @@ runs:
         cd "${{ inputs.workspace-folder }}"
         
         # Get container ID using devcontainer CLI
-        CONTAINER_ID=$(devcontainer exec --workspace-folder . -- hostname 2>/dev/null | tr -d '\n\r')
+        CONTAINER_ID=$(devcontainer exec --workspace-folder . -- hostname 2>/dev/null | tr -d '\n\r') || true
         
         if [[ -z "${CONTAINER_ID}" ]]; then
           # Fallback: try to find container by label
@@ -216,6 +216,12 @@ runs:
           else
             CONTAINER_ID=$(docker ps -q --filter "label=${{ inputs.container-id-label }}" | head -n1)
           fi
+        fi
+
+        if [[ -z "${CONTAINER_ID}" ]]; then
+          echo "::error::No container found with label ${{ inputs.container-id-label }}"
+          docker ps -a
+          exit 1
         fi
         
         echo "id=${CONTAINER_ID}" >> $GITHUB_OUTPUT
