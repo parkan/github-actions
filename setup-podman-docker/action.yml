@@ -264,24 +264,24 @@ runs:
           ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ steps.version.outputs.version }}-
           ${{ inputs.cache-key-prefix }}-${{ runner.os }}-
 
-      - name: Fix restored cache permissions
-        if: inputs.cache-storage == 'true'
-        shell: bash
-        run: |
-          # Fix permissions on restored cache
-          if [[ -d ~/.local/share/containers ]]; then
-            sudo chown -R $(id -u):$(id -g) ~/.local/share/containers
-            chmod -R 755 ~/.local/share/containers
-          fi
-          if [[ -d ~/.config/containers ]]; then
-            sudo chown -R $(id -u):$(id -g) ~/.config/containers
-            chmod -R 755 ~/.config/containers
-          fi
-          # Reset database if needed
-          podman info > /dev/null 2>&1 || {
-            echo "Resetting Podman database..."
-            rm -rf ~/.local/share/containers/storage/libpod/bolt_state.db
-            podman system migrate
+    - name: Fix restored cache permissions
+      if: inputs.cache-storage == 'true'
+      shell: bash
+      run: |
+        # Fix permissions on restored cache
+        if [[ -d ~/.local/share/containers ]]; then
+          sudo chown -R $(id -u):$(id -g) ~/.local/share/containers
+          chmod -R 755 ~/.local/share/containers
+        fi
+        if [[ -d ~/.config/containers ]]; then
+          sudo chown -R $(id -u):$(id -g) ~/.config/containers
+          chmod -R 755 ~/.config/containers
+        fi
+        # Reset database if needed
+        podman info > /dev/null 2>&1 || {
+          echo "Resetting Podman database..."
+          rm -rf ~/.local/share/containers/storage/libpod/bolt_state.db
+          podman system migrate
           }
 
     - name: Prepare cache permissions
