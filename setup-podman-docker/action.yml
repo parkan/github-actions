@@ -129,6 +129,21 @@ runs:
         
         echo "::endgroup::"
 
+    - name: Initialize Podman database
+      shell: bash
+      run: |
+        # Ensure database is writable
+        mkdir -p ~/.local/share/containers
+        podman system migrate || true
+        
+        # Test that Podman works
+        podman run --rm alpine echo "Podman initialized" || {
+          echo "Fixing Podman database permissions..."
+          sudo chown -R $(id -u):$(id -g) ~/.local/share/containers
+          podman system reset -f
+          podman system migrate
+        }
+
     - name: Determine socket path
       id: socket
       shell: bash
