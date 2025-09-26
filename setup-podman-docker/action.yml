@@ -80,12 +80,18 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Installing Podman"
-        
-        # Update package index
+
+        export DEBIAN_FRONTEND=noninteractive
+        export NEEDRESTART_MODE=a
         sudo apt-get update
         
         # Install required packages
         sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          --no-install-recommends \
+          -o Dpkg::Options::="--force-confdef" \
+          -o Dpkg::Options::="--force-confold" \
+          -o APT::Install-Suggests=0 \
+          -o APT::Install-Recommends=0 \
           podman \
           podman-docker \
           uidmap \
