@@ -251,7 +251,17 @@ runs:
         
         echo "Executing: ${{ inputs.test-command }}"
         
-        if devcontainer exec --workspace-folder . -- bash -lc '${{ inputs.test-command }}'; then
+        # Use docker/podman directly with the container ID
+        RUNTIME="${{ steps.runtime.outputs.runtime }}"
+        CONTAINER_ID="${{ steps.container.outputs.id }}"
+        
+        if [[ "${RUNTIME}" == "podman" ]]; then
+          CMD="podman exec ${CONTAINER_ID}"
+        else
+          CMD="docker exec ${CONTAINER_ID}"
+        fi
+        
+        if ${CMD} bash -lc '${{ inputs.test-command }}'; then
           echo "✅ Tests passed"
         else
           EXIT_CODE=$?
@@ -261,10 +271,9 @@ runs:
             exit ${EXIT_CODE}
           fi
         fi
-        
-        echo "exit-code=${EXIT_CODE}" >> $GITHUB_OUTPUT
-        echo "::endgroup::"
-
+    
+    echo "exit-code=${EXIT_CODE}" >> $GITHUB_OUTPUT
+    echo "::endgroup::"
     - name: Cleanup container
       if: always()
       shell: bash
