@@ -272,8 +272,8 @@ runs:
           fi
         fi
     
-    echo "exit-code=${EXIT_CODE}" >> $GITHUB_OUTPUT
-    echo "::endgroup::"
+        echo "exit-code=${EXIT_CODE}" >> $GITHUB_OUTPUT
+        echo "::endgroup::"
     - name: Cleanup container
       if: always()
       shell: bash
