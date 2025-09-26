@@ -264,6 +264,15 @@ runs:
           ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ steps.version.outputs.version }}-
           ${{ inputs.cache-key-prefix }}-${{ runner.os }}-
 
+    - name: Prepare cache permissions
+      if: inputs.cache-storage == 'true'
+      shell: bash
+      run: |
+        # Ensure storage is owned by user for caching
+        # Some operations create root-owned files in overlay
+        sudo chown -R $(id -u):$(id -g) ~/.local/share/containers 2>/dev/null || true
+        sudo chown -R $(id -u):$(id -g) ~/.config/containers 2>/dev/null || true
+
     - name: Output summary
       shell: bash
       run: |
