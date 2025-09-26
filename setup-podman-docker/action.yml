@@ -71,7 +71,7 @@ runs:
         sudo systemctl mask docker.socket docker
         
         # Remove packages
-        sudo apt-get remove --purge man-db
+        sudo apt-get remove --purge man-db || true
         sudo apt-get remove -y docker-ce docker-ce-cli moby-cli 2>/dev/null || true
         
         echo "::endgroup::"
