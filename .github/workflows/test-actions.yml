@@ -25,6 +25,7 @@ jobs:
           cache-storage: ${{ matrix.cache }}
 
       - name: Verify Podman Setup
+        if: matrix.cache == false
         run: |
           echo "Socket path: ${{ steps.podman.outputs.socket-path }}"
           echo "Docker host: ${{ steps.podman.outputs.docker-host }}"
