@@ -121,7 +121,7 @@ jobs:
         with:
           workspace-folder: .
           container-runtime: podman
-          test-command: 'cd  /home/runner/work/github-actions/github-actions/ && go test -v ./...'
+          test-command: 'cd  /workspaces/github-actions/ && go test -v ./...'
 
   test-error-handling:
     name: Test Error Handling
