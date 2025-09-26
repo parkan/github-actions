@@ -101,7 +101,22 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Configuring rootless Podman"
+
+        # Force Podman to use user directories
+        export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+        export XDG_CONFIG_HOME="$HOME/.config"
+        export XDG_DATA_HOME="$HOME/.local/share"
         
+        # Set these for all future steps
+        echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}" >> $GITHUB_ENV
+        echo "XDG_CONFIG_HOME=${XDG_CONFIG_HOME}" >> $GITHUB_ENV
+        echo "XDG_DATA_HOME=${XDG_DATA_HOME}" >> $GITHUB_ENV
+        
+        # Create directories with correct permissions
+        mkdir -p "${XDG_DATA_HOME}/containers"
+        mkdir -p "${XDG_CONFIG_HOME}/containers"
+        mkdir -p "${XDG_RUNTIME_DIR}"
+            
         u=$(id -un)
         uid=$(id -u)
         
@@ -129,21 +144,6 @@ runs:
         
         echo "::endgroup::"
 
-    - name: Initialize Podman database
-      shell: bash
-      run: |
-        # Ensure database is writable
-        mkdir -p ~/.local/share/containers
-        podman system migrate || true
-        
-        # Test that Podman works
-        podman run --rm alpine echo "Podman initialized" || {
-          echo "Fixing Podman database permissions..."
-          sudo chown -R $(id -u):$(id -g) ~/.local/share/containers
-          podman system reset -f
-          podman system migrate
-        }
-
     - name: Determine socket path
       id: socket
       shell: bash
@@ -168,6 +168,8 @@ runs:
       run: |
         set -euo pipefail
         echo "::group::Starting Podman service"
+        export PODMAN_USERNS=keep-id
+        echo "PODMAN_USERNS=keep-id" >> $GITHUB_ENV
         
         SOCKET_PATH="${{ steps.socket.outputs.path }}"
         
