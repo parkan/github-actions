@@ -71,6 +71,8 @@ runs:
         sudo systemctl mask docker.socket docker
         
         # Remove packages
+        sudo debconf-set man-db/auto-update false
+        sudo rm /var/lib/man-db/auto-update
         sudo apt-get remove -y docker-ce docker-ce-cli moby-cli 2>/dev/null || true
         
         echo "::endgroup::"
