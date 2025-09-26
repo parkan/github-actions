@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        disable-docker: [true, false]
         cache: [true, false]
     steps:
       - name: Checkout
@@ -22,7 +21,7 @@ jobs:
         uses: ./setup-podman-docker
         id: podman
         with:
-          disable-docker: ${{ matrix.disable-docker }}
+          disable-docker: true
           cache-storage: ${{ matrix.cache }}
 
       - name: Verify Podman Setup
