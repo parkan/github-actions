@@ -14,7 +14,7 @@ inputs:
   cache-storage:
     description: 'Whether to cache Podman storage'
     required: false
-    default: 'true'
+    default: 'false'
   cache-key-prefix:
     description: 'Prefix for cache key'
     required: false
