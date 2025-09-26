@@ -82,7 +82,9 @@ jobs:
           {
             "name": "Go Test Container",
             "image": "mcr.microsoft.com/devcontainers/go:1.21",
-            "features": {},
+            "features": {
+              "ghcr.io/devcontainers-extra/features/mysql-homebrew:1": {}
+            },
             "postCreateCommand": "go version"
           }
           EOF
