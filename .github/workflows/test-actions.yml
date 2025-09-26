@@ -54,21 +54,6 @@ jobs:
           }
           EOF
 
-      - name: Validate inputs
-        shell: bash
-        run: |
-          set -euo pipefail
-          
-          echo "Current directory: $(pwd)"
-          echo "Workspace folder: ${{ inputs.workspace-folder }}"
-          echo "Looking for devcontainer at: ${{ inputs.workspace-folder }}/.devcontainer/devcontainer.json"
-          ls -la "${{ inputs.workspace-folder }}" || true
-          
-          if [[ ! -d "${{ inputs.workspace-folder }}" ]]; then
-            echo "::error::Workspace folder does not exist: ${{ inputs.workspace-folder }}"
-            exit 1
-          fi
-
       - name: Test Devcontainer Action
         uses: ./devcontainer-test
         id: devtest
