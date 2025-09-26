@@ -121,7 +121,7 @@ jobs:
         with:
           workspace-folder: .
           container-runtime: podman
-          test-command: 'cd testapp && go test -v ./...'
+          test-command: 'go test -v ./...'
 
   test-error-handling:
     name: Test Error Handling
