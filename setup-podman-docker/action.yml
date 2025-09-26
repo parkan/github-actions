@@ -91,6 +91,7 @@ runs:
           uidmap \
           slirp4netns \
           fuse-overlayfs \
+          iptables \
           jq
         
         echo "::endgroup::"
