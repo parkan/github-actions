@@ -245,6 +245,8 @@ runs:
         echo "::group::Running tests in devcontainer"
         
         cd "${{ inputs.workspace-folder }}"
+        echo $PWD
+        find /
         
         # Run test command and capture exit code
         EXIT_CODE=0
