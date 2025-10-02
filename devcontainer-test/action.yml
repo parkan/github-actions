@@ -246,7 +246,6 @@ runs:
         
         cd "${{ inputs.workspace-folder }}"
         echo $PWD
-        find /home/runner/work
         
         # Run test command and capture exit code
         EXIT_CODE=0
