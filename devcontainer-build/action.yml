@@ -202,17 +202,9 @@ runs:
 
         cd "${{ inputs.workspace-folder }}"
 
-        # Get container ID using devcontainer CLI
-        CONTAINER_ID=$(devcontainer exec --workspace-folder . -- hostname 2>/dev/null | tr -d '\n\r') || true
-
-        if [[ -z "${CONTAINER_ID}" ]]; then
-          # Fallback: try to find container by label
-          if [[ "${{ steps.runtime.outputs.runtime }}" == "podman" ]]; then
-            CONTAINER_ID=$(podman ps -q --filter "label=${{ inputs.container-id-label }}" | head -n1)
-          else
-            CONTAINER_ID=$(docker ps -q --filter "label=${{ inputs.container-id-label }}" | head -n1)
-          fi
-        fi
+        # Try to find container by label (use -a to include stopped containers)
+        # Note: docker command works with both Docker and Podman (via podman-docker)
+        CONTAINER_ID=$(docker ps -aq --filter "label=${{ inputs.container-id-label }}" | head -n1)
 
         if [[ -z "${CONTAINER_ID}" ]]; then
           echo "::error::No container found with label ${{ inputs.container-id-label }}"
@@ -220,8 +212,20 @@ runs:
           exit 1
         fi
 
+        # Verify container is running
+        CONTAINER_STATUS=$(docker ps --filter "id=${CONTAINER_ID}" --format "{{.Status}}")
+
+        if [[ -z "${CONTAINER_STATUS}" ]]; then
+          echo "::error::Container ${CONTAINER_ID} exists but is not running"
+          docker ps -a --filter "id=${CONTAINER_ID}"
+          echo "=== Container logs ==="
+          docker logs "${CONTAINER_ID}" 2>&1 || true
+          exit 1
+        fi
+
         echo "id=${CONTAINER_ID}" >> $GITHUB_OUTPUT
         echo "Container ID: ${CONTAINER_ID}"
+        echo "Container Status: ${CONTAINER_STATUS}"
 
     - name: Post-build command
       if: inputs.post-build-command != ''
