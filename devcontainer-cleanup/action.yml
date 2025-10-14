@@ -76,35 +76,21 @@ runs:
         fi
 
         # Manual cleanup by container ID
+        # Note: docker command works with both Docker and Podman (via podman-docker)
         if [[ -n "${{ inputs.container-id }}" ]]; then
           CONTAINER_ID="${{ inputs.container-id }}"
           echo "Cleaning up container: ${CONTAINER_ID}"
-
-          if [[ "${RUNTIME}" == "podman" ]]; then
-            podman stop "${CONTAINER_ID}" 2>/dev/null || true
-            podman rm -f "${CONTAINER_ID}" 2>/dev/null || true
-          else
-            docker stop "${CONTAINER_ID}" 2>/dev/null || true
-            docker rm -f "${CONTAINER_ID}" 2>/dev/null || true
-          fi
+          docker stop "${CONTAINER_ID}" 2>/dev/null || true
+          docker rm -f "${CONTAINER_ID}" 2>/dev/null || true
         fi
 
         # Fallback: cleanup by label
         if [[ -n "${{ inputs.container-id-label }}" ]]; then
           echo "Cleaning up containers with label: ${{ inputs.container-id-label }}"
-
-          if [[ "${RUNTIME}" == "podman" ]]; then
-            CONTAINERS=$(podman ps -q --filter "label=${{ inputs.container-id-label }}" 2>/dev/null || true)
-            if [[ -n "${CONTAINERS}" ]]; then
-              echo "${CONTAINERS}" | xargs -r podman stop 2>/dev/null || true
-              echo "${CONTAINERS}" | xargs -r podman rm -f 2>/dev/null || true
-            fi
-          else
-            CONTAINERS=$(docker ps -q --filter "label=${{ inputs.container-id-label }}" 2>/dev/null || true)
-            if [[ -n "${CONTAINERS}" ]]; then
-              echo "${CONTAINERS}" | xargs -r docker stop 2>/dev/null || true
-              echo "${CONTAINERS}" | xargs -r docker rm -f 2>/dev/null || true
-            fi
+          CONTAINERS=$(docker ps -q --filter "label=${{ inputs.container-id-label }}" 2>/dev/null || true)
+          if [[ -n "${CONTAINERS}" ]]; then
+            echo "${CONTAINERS}" | xargs -r docker stop 2>/dev/null || true
+            echo "${CONTAINERS}" | xargs -r docker rm -f 2>/dev/null || true
           fi
         fi
 

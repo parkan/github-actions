@@ -68,21 +68,13 @@ runs:
       run: |
         set -euo pipefail
 
-        RUNTIME="${{ steps.runtime.outputs.runtime }}"
         CONTAINER_ID="${{ inputs.container-id }}"
 
-        if [[ "${RUNTIME}" == "podman" ]]; then
-          if ! podman ps --format '{{.ID}}' | grep -q "^${CONTAINER_ID}"; then
-            echo "::error::Container ${CONTAINER_ID} is not running"
-            podman ps -a
-            exit 1
-          fi
-        else
-          if ! docker ps --format '{{.ID}}' | grep -q "^${CONTAINER_ID}"; then
-            echo "::error::Container ${CONTAINER_ID} is not running"
-            docker ps -a
-            exit 1
-          fi
+        # Note: docker command works with both Docker and Podman (via podman-docker)
+        if ! docker ps --format '{{.ID}}' | grep -q "^${CONTAINER_ID}"; then
+          echo "::error::Container ${CONTAINER_ID} is not running"
+          docker ps -a
+          exit 1
         fi
 
     - name: Execute command
@@ -92,7 +84,6 @@ runs:
         set -euo pipefail
         echo "::group::Executing command in devcontainer"
 
-        RUNTIME="${{ steps.runtime.outputs.runtime }}"
         CONTAINER_ID="${{ inputs.container-id }}"
         EXIT_CODE=0
 
@@ -100,11 +91,8 @@ runs:
         echo "Command: ${{ inputs.command }}"
 
         # Build the exec command
-        if [[ "${RUNTIME}" == "podman" ]]; then
-          CMD="podman exec"
-        else
-          CMD="docker exec"
-        fi
+        # Note: docker command works with both Docker and Podman (via podman-docker)
+        CMD="docker exec"
 
         # Add working directory if specified
         if [[ -n "${{ inputs.working-directory }}" ]]; then
