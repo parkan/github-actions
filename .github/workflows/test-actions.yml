@@ -94,21 +94,25 @@ jobs:
           # Create a simple Go project
           mkdir -p testapp
           cat > testapp/main.go <<'GOEOF'
-          package main
-          import "fmt"
-          func Hello() string { return "Hello, World!" }
-          func main() { fmt.Println(Hello()) }
-          GOEOF
+package main
+
+import "fmt"
+
+func Hello() string { return "Hello, World!" }
+func main()          { fmt.Println(Hello()) }
+GOEOF
 
           cat > testapp/main_test.go <<'GOEOF'
-          package main
-          import "testing"
-          func TestHello(t *testing.T) {
-            if got := Hello(); got != "Hello, World!" {
-              t.Errorf("Hello() = %v, want %v", got, "Hello, World!")
-            }
-          }
-          GOEOF
+package main
+
+import "testing"
+
+func TestHello(t *testing.T) {
+	if got := Hello(); got != "Hello, World!" {
+		t.Errorf("Hello() = %v, want %v", got, "Hello, World!")
+	}
+}
+GOEOF
 
           cat > go.mod <<EOF
           module testapp
