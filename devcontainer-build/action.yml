@@ -1,0 +1,247 @@
+name: 'Devcontainer Build'
+description: 'Build and start a devcontainer environment'
+author: 'parkan'
+
+inputs:
+  workspace-folder:
+    description: 'Path to workspace folder'
+    required: false
+    default: '.'
+  devcontainer-cli-version:
+    description: 'Version of @devcontainers/cli to install'
+    required: false
+    default: 'latest'
+  build-cache:
+    description: 'Whether to use build cache'
+    required: false
+    default: 'true'
+  cache-key-prefix:
+    description: 'Prefix for build cache key'
+    required: false
+    default: 'devcontainer'
+  container-id-label:
+    description: 'Label to identify container'
+    required: false
+    default: 'ci=devcontainer'
+  pre-build-command:
+    description: 'Command to run before building devcontainer'
+    required: false
+    default: ''
+  post-build-command:
+    description: 'Command to run after building devcontainer'
+    required: false
+    default: ''
+  container-runtime:
+    description: 'Container runtime (docker or podman)'
+    required: false
+    default: 'docker'
+
+outputs:
+  container-id:
+    description: 'ID of the devcontainer'
+    value: ${{ steps.container.outputs.id }}
+  runtime:
+    description: 'Container runtime being used'
+    value: ${{ steps.runtime.outputs.runtime }}
+  build-time:
+    description: 'Time taken to build devcontainer (seconds)'
+    value: ${{ steps.build.outputs.duration }}
+  workspace-folder:
+    description: 'Workspace folder path'
+    value: ${{ inputs.workspace-folder }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [[ ! -d "${{ inputs.workspace-folder }}" ]]; then
+          echo "::error::Workspace folder does not exist: ${{ inputs.workspace-folder }}"
+          exit 1
+        fi
+
+        if [[ ! -f "${{ inputs.workspace-folder }}/.devcontainer/devcontainer.json" ]] && \
+           [[ ! -f "${{ inputs.workspace-folder }}/.devcontainer.json" ]]; then
+          echo "::error::No devcontainer.json found in workspace"
+          exit 1
+        fi
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install Dev Containers CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Installing Dev Containers CLI"
+
+        VERSION="${{ inputs.devcontainer-cli-version }}"
+        if [[ "${VERSION}" == "latest" ]]; then
+          npm install -g @devcontainers/cli
+        else
+          npm install -g @devcontainers/cli@${VERSION}
+        fi
+
+        # Verify installation
+        devcontainer --version
+        echo "Dev Containers CLI installed successfully"
+
+        echo "::endgroup::"
+
+    - name: Detect container runtime
+      id: runtime
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        RUNTIME="${{ inputs.container-runtime }}"
+
+        # Auto-detect if not specified
+        if [[ "${RUNTIME}" == "auto" ]]; then
+          if [[ -n "${DOCKER_HOST:-}" ]]; then
+            # Check if it's actually Podman
+            if docker version 2>&1 | grep -q "podman"; then
+              RUNTIME="podman"
+            else
+              RUNTIME="docker"
+            fi
+          elif command -v podman >/dev/null 2>&1; then
+            RUNTIME="podman"
+          elif command -v docker >/dev/null 2>&1; then
+            RUNTIME="docker"
+          else
+            echo "::error::No container runtime found"
+            exit 1
+          fi
+        fi
+
+        echo "runtime=${RUNTIME}" >> $GITHUB_OUTPUT
+        echo "Using container runtime: ${RUNTIME}"
+
+    - name: Cache devcontainer builds
+      if: inputs.build-cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.local/share/devcontainers
+          /tmp/devcontainer-cache
+        key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ hashFiles(format('{0}/.devcontainer/**', inputs.workspace-folder), format('{0}/Dockerfile', inputs.workspace-folder)) }}
+        restore-keys: |
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-
+
+    - name: Pre-build command
+      if: inputs.pre-build-command != ''
+      shell: bash
+      working-directory: ${{ inputs.workspace-folder }}
+      run: |
+        set -euo pipefail
+        echo "::group::Running pre-build command"
+        ${{ inputs.pre-build-command }}
+        echo "::endgroup::"
+
+    - name: Build devcontainer
+      id: build
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Building devcontainer"
+
+        START_TIME=$(date +%s)
+
+        # Build with appropriate options
+        BUILD_ARGS=""
+
+        # Add id-label if provided
+        if [[ -n "${{ inputs.container-id-label }}" ]]; then
+          BUILD_ARGS="${BUILD_ARGS} --id-label ${{ inputs.container-id-label }}"
+        fi
+
+        # Add runtime-specific options
+        if [[ "${{ steps.runtime.outputs.runtime }}" == "podman" ]]; then
+          # Podman-specific build args
+          BUILD_ARGS="${BUILD_ARGS} --docker-path podman"
+        fi
+
+        # Run the build
+        cd "${{ inputs.workspace-folder }}"
+
+        echo "Building with: devcontainer up --workspace-folder . ${BUILD_ARGS}"
+
+        if ! devcontainer up --workspace-folder . ${BUILD_ARGS}; then
+          echo "::error::Failed to build devcontainer"
+
+          # Try to get logs
+          echo "=== Container logs ==="
+          if [[ "${{ steps.runtime.outputs.runtime }}" == "podman" ]]; then
+            podman ps -a --filter "label=${{ inputs.container-id-label }}" --format "table {{.ID}} {{.Names}} {{.Status}}"
+            podman logs $(podman ps -aq --filter "label=${{ inputs.container-id-label }}" | head -n1) 2>&1 || true
+          else
+            docker ps -a --filter "label=${{ inputs.container-id-label }}" --format "table {{.ID}} {{.Names}} {{.Status}}"
+            docker logs $(docker ps -aq --filter "label=${{ inputs.container-id-label }}" | head -n1) 2>&1 || true
+          fi
+          exit 1
+        fi
+
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        echo "duration=${DURATION}" >> $GITHUB_OUTPUT
+
+        echo "Devcontainer built successfully in ${DURATION} seconds"
+        echo "::endgroup::"
+
+    - name: Get container info
+      id: container
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        cd "${{ inputs.workspace-folder }}"
+
+        # Get container ID using devcontainer CLI
+        CONTAINER_ID=$(devcontainer exec --workspace-folder . -- hostname 2>/dev/null | tr -d '\n\r') || true
+
+        if [[ -z "${CONTAINER_ID}" ]]; then
+          # Fallback: try to find container by label
+          if [[ "${{ steps.runtime.outputs.runtime }}" == "podman" ]]; then
+            CONTAINER_ID=$(podman ps -q --filter "label=${{ inputs.container-id-label }}" | head -n1)
+          else
+            CONTAINER_ID=$(docker ps -q --filter "label=${{ inputs.container-id-label }}" | head -n1)
+          fi
+        fi
+
+        if [[ -z "${CONTAINER_ID}" ]]; then
+          echo "::error::No container found with label ${{ inputs.container-id-label }}"
+          docker ps -a
+          exit 1
+        fi
+
+        echo "id=${CONTAINER_ID}" >> $GITHUB_OUTPUT
+        echo "Container ID: ${CONTAINER_ID}"
+
+    - name: Post-build command
+      if: inputs.post-build-command != ''
+      shell: bash
+      working-directory: ${{ inputs.workspace-folder }}
+      run: |
+        set -euo pipefail
+        echo "::group::Running post-build command"
+        devcontainer exec --workspace-folder . -- bash -lc '${{ inputs.post-build-command }}'
+        echo "::endgroup::"
+
+    - name: Output summary
+      shell: bash
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY <<EOF
+        ## Devcontainer Build Complete ✅
+
+        - **Runtime**: ${{ steps.runtime.outputs.runtime }}
+        - **Build Time**: ${{ steps.build.outputs.duration }}s
+        - **Container ID**: \`${{ steps.container.outputs.id }}\`
+
+        The devcontainer is now ready for running commands.
+        EOF

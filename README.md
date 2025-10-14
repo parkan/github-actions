@@ -8,9 +8,20 @@ Reusable GitHub Actions for container-based CI/CD workflows, with first-class su
 Replace Docker with Podman and configure rootless container operations with full Docker CLI compatibility.
 
 ### [devcontainer-test](./devcontainer-test)
-Build and run tests in devcontainer environments with support for both Docker and Podman backends.
+Build and run tests in devcontainer environments with support for both Docker and Podman backends. All-in-one action that builds, tests, and cleans up.
+
+### [devcontainer-build](./devcontainer-build)
+Build and start a devcontainer environment. Use this with devcontainer-exec for running multiple separate checks.
+
+### [devcontainer-exec](./devcontainer-exec)
+Execute a command in a running devcontainer. Perfect for running multiple checks (tests, linting, formatting) as separate CI steps.
+
+### [devcontainer-cleanup](./devcontainer-cleanup)
+Stop and remove a devcontainer. Use with `if: always()` to ensure cleanup happens even if tests fail.
 
 ## Quick Start
+
+### All-in-One Approach
 
 ```yaml
 # .github/workflows/ci.yml
@@ -22,16 +33,60 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       # Setup Podman as Docker replacement
       - uses: parkan/github-actions/setup-podman-docker@v1
         with:
           disable-docker: true
-          
-      # Run tests in devcontainer
+
+      # Run tests in devcontainer (builds, tests, and cleans up)
       - uses: parkan/github-actions/devcontainer-test@v1
         with:
           test-command: 'go test ./...'
+```
+
+### Modular Approach (Multiple Checks)
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup Podman
+      - uses: parkan/github-actions/setup-podman-docker@v1
+        with:
+          disable-docker: true
+
+      # Build devcontainer once
+      - name: Build devcontainer
+        id: build
+        uses: parkan/github-actions/devcontainer-build@v1
+
+      # Run multiple checks - each shows as separate pass/fail
+      - name: Run tests
+        uses: parkan/github-actions/devcontainer-exec@v1
+        with:
+          container-id: ${{ steps.build.outputs.container-id }}
+          command: 'go test -v ./...'
+
+      - name: Run linter
+        uses: parkan/github-actions/devcontainer-exec@v1
+        with:
+          container-id: ${{ steps.build.outputs.container-id }}
+          command: 'go vet ./...'
+
+      # Cleanup
+      - name: Cleanup
+        if: always()
+        uses: parkan/github-actions/devcontainer-cleanup@v1
+        with:
+          container-id: ${{ steps.build.outputs.container-id }}
 ```
 
 ## Testing

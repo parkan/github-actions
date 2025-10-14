@@ -1,0 +1,146 @@
+name: 'Devcontainer Exec'
+description: 'Execute a command in a running devcontainer'
+author: 'parkan'
+
+inputs:
+  container-id:
+    description: 'ID of the running devcontainer'
+    required: true
+  workspace-folder:
+    description: 'Path to workspace folder (for devcontainer exec)'
+    required: false
+    default: '.'
+  command:
+    description: 'Command to execute in the devcontainer'
+    required: true
+  container-runtime:
+    description: 'Container runtime (docker or podman)'
+    required: false
+    default: 'auto'
+  fail-on-error:
+    description: 'Whether to fail the action on command errors'
+    required: false
+    default: 'true'
+  working-directory:
+    description: 'Working directory for the command (relative to workspace mount)'
+    required: false
+    default: ''
+
+outputs:
+  exit-code:
+    description: 'Exit code of the command'
+    value: ${{ steps.exec.outputs.exit-code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect container runtime
+      id: runtime
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        RUNTIME="${{ inputs.container-runtime }}"
+
+        # Auto-detect if not specified
+        if [[ "${RUNTIME}" == "auto" ]]; then
+          if [[ -n "${DOCKER_HOST:-}" ]]; then
+            # Check if it's actually Podman
+            if docker version 2>&1 | grep -q "podman"; then
+              RUNTIME="podman"
+            else
+              RUNTIME="docker"
+            fi
+          elif command -v podman >/dev/null 2>&1; then
+            RUNTIME="podman"
+          elif command -v docker >/dev/null 2>&1; then
+            RUNTIME="docker"
+          else
+            echo "::error::No container runtime found"
+            exit 1
+          fi
+        fi
+
+        echo "runtime=${RUNTIME}" >> $GITHUB_OUTPUT
+
+    - name: Verify container is running
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        RUNTIME="${{ steps.runtime.outputs.runtime }}"
+        CONTAINER_ID="${{ inputs.container-id }}"
+
+        if [[ "${RUNTIME}" == "podman" ]]; then
+          if ! podman ps --format '{{.ID}}' | grep -q "^${CONTAINER_ID}"; then
+            echo "::error::Container ${CONTAINER_ID} is not running"
+            podman ps -a
+            exit 1
+          fi
+        else
+          if ! docker ps --format '{{.ID}}' | grep -q "^${CONTAINER_ID}"; then
+            echo "::error::Container ${CONTAINER_ID} is not running"
+            docker ps -a
+            exit 1
+          fi
+        fi
+
+    - name: Execute command
+      id: exec
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "::group::Executing command in devcontainer"
+
+        RUNTIME="${{ steps.runtime.outputs.runtime }}"
+        CONTAINER_ID="${{ inputs.container-id }}"
+        EXIT_CODE=0
+
+        echo "Container: ${CONTAINER_ID}"
+        echo "Command: ${{ inputs.command }}"
+
+        # Build the exec command
+        if [[ "${RUNTIME}" == "podman" ]]; then
+          CMD="podman exec"
+        else
+          CMD="docker exec"
+        fi
+
+        # Add working directory if specified
+        if [[ -n "${{ inputs.working-directory }}" ]]; then
+          CMD="${CMD} -w ${{ inputs.working-directory }}"
+        fi
+
+        CMD="${CMD} ${CONTAINER_ID} bash -lc"
+
+        # Execute the command
+        if ${CMD} '${{ inputs.command }}'; then
+          echo "✅ Command succeeded"
+        else
+          EXIT_CODE=$?
+          echo "❌ Command failed with exit code: ${EXIT_CODE}"
+
+          if [[ "${{ inputs.fail-on-error }}" == "true" ]]; then
+            exit ${EXIT_CODE}
+          fi
+        fi
+
+        echo "exit-code=${EXIT_CODE}" >> $GITHUB_OUTPUT
+        echo "::endgroup::"
+
+    - name: Output summary
+      if: always()
+      shell: bash
+      run: |
+        EXIT_CODE="${{ steps.exec.outputs.exit-code }}"
+        STATUS="${{ steps.exec.outputs.exit-code == '0' && '✅ Passed' || '❌ Failed' }}"
+
+        cat >> $GITHUB_STEP_SUMMARY <<EOF
+        ### Command Execution: ${STATUS}
+
+        **Exit Code**: ${EXIT_CODE}
+
+        \`\`\`bash
+        ${{ inputs.command }}
+        \`\`\`
+        EOF
