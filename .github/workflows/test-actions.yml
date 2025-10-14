@@ -135,7 +135,7 @@ jobs:
         uses: ./devcontainer-exec
         with:
           container-id: ${{ steps.build.outputs.container-id }}
-          command: 'cd /workspaces/github-actions && test -z "$(gofmt -l .)"'
+          command: 'cd /workspaces/github-actions && test -z "$$(gofmt -l .)"'
           container-runtime: podman
 
       - name: Cleanup devcontainer
