@@ -38,7 +38,7 @@ jobs:
           podman run --rm alpine echo "Hello from Podman"
 
   test-devcontainer-minimal:
-    name: Test Devcontainer Action (Minimal)
+    name: Test Devcontainer Actions (Minimal)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,75 +55,23 @@ jobs:
           }
           EOF
 
-      - name: Test Devcontainer Action
-        uses: ./devcontainer-test
-        id: devtest
+      - name: Build devcontainer
+        id: build
+        uses: ./devcontainer-build
         with:
           workspace-folder: .
-          test-command: 'echo "Test successful" && exit 0'
 
-      - name: Verify Results
-        run: |
-          echo "Container ID: ${{ steps.devtest.outputs.container-id }}"
-          echo "Test exit code: ${{ steps.devtest.outputs.test-exit-code }}"
-          echo "Build time: ${{ steps.devtest.outputs.build-time }}s"
-
-  test-integration:
-    name: Test Full Integration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create test devcontainer with Go
-        run: |
-          mkdir -p .devcontainer
-          cat > .devcontainer/devcontainer.json <<EOF
-          {
-            "name": "Go Test Container",
-            "image": "mcr.microsoft.com/devcontainers/go:1.21",
-            "features": {
-              "ghcr.io/devcontainers-extra/features/mysql-homebrew:1": {}
-            },
-            "postCreateCommand": "go version"
-          }
-          EOF
-          
-          # Create a simple Go test
-          mkdir -p testapp
-          cat > testapp/main.go <<'GOEOF'
-          package main
-          import "fmt"
-          func Hello() string { return "Hello, Podman!" }
-          func main() { fmt.Println(Hello()) }
-          GOEOF
-          
-          cat > testapp/main_test.go <<'GOEOF'
-          package main
-          import "testing"
-          func TestHello(t *testing.T) {
-            if got := Hello(); got != "Hello, Podman!" {
-              t.Errorf("Hello() = %v, want %v", got, "Hello, Podman!")
-            }
-          }
-          GOEOF
-          
-          cat > go.mod <<EOF
-          module testapp
-          go 1.21
-          EOF
-
-      - name: Setup Podman as Docker
-        uses: ./setup-podman-docker
+      - name: Test basic command
+        uses: ./devcontainer-exec
         with:
-          disable-docker: true
+          container-id: ${{ steps.build.outputs.container-id }}
+          command: 'echo "Test successful"'
 
-      - name: Run Devcontainer Tests with Podman
-        uses: ./devcontainer-test
+      - name: Cleanup
+        if: always()
+        uses: ./devcontainer-cleanup
         with:
-          workspace-folder: .
-          container-runtime: podman
-          test-command: 'cd  /workspaces/github-actions/ && go test -v ./...'
+          container-id: ${{ steps.build.outputs.container-id }}
 
   test-modular-devcontainer:
     name: Test Modular Devcontainer Actions
@@ -217,10 +165,9 @@ jobs:
       - name: Test missing devcontainer.json
         id: missing-config
         continue-on-error: true
-        uses: ./devcontainer-test
+        uses: ./devcontainer-build
         with:
           workspace-folder: .
-          test-command: 'echo "Should not run"'
 
       - name: Verify error was caught
         run: |

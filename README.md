@@ -7,22 +7,17 @@ Reusable GitHub Actions for container-based CI/CD workflows, with first-class su
 ### [setup-podman-docker](./setup-podman-docker)
 Replace Docker with Podman and configure rootless container operations with full Docker CLI compatibility.
 
-### [devcontainer-test](./devcontainer-test)
-Build and run tests in devcontainer environments with support for both Docker and Podman backends. All-in-one action that builds, tests, and cleans up.
-
 ### [devcontainer-build](./devcontainer-build)
-Build and start a devcontainer environment. Use this with devcontainer-exec for running multiple separate checks.
+Build and start a devcontainer environment. Outputs container ID for use with devcontainer-exec.
 
 ### [devcontainer-exec](./devcontainer-exec)
-Execute a command in a running devcontainer. Perfect for running multiple checks (tests, linting, formatting) as separate CI steps.
+Execute a command in a running devcontainer. Run multiple separate checks (tests, linting, formatting) as individual CI steps with granular pass/fail status.
 
 ### [devcontainer-cleanup](./devcontainer-cleanup)
 Stop and remove a devcontainer. Use with `if: always()` to ensure cleanup happens even if tests fail.
 
 ## Quick Start
 
-### All-in-One Approach
-
 ```yaml
 # .github/workflows/ci.yml
 name: CI
@@ -34,31 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Setup Podman as Docker replacement
-      - uses: parkan/github-actions/setup-podman-docker@v1
-        with:
-          disable-docker: true
-
-      # Run tests in devcontainer (builds, tests, and cleans up)
-      - uses: parkan/github-actions/devcontainer-test@v1
-        with:
-          test-command: 'go test ./...'
-```
-
-### Modular Approach (Multiple Checks)
-
-```yaml
-# .github/workflows/ci.yml
-name: CI
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # Setup Podman
+      # Setup Podman (optional - can also use Docker)
       - uses: parkan/github-actions/setup-podman-docker@v1
         with:
           disable-docker: true
@@ -80,6 +51,12 @@ jobs:
         with:
           container-id: ${{ steps.build.outputs.container-id }}
           command: 'go vet ./...'
+
+      - name: Check formatting
+        uses: parkan/github-actions/devcontainer-exec@v1
+        with:
+          container-id: ${{ steps.build.outputs.container-id }}
+          command: 'test -z "$(gofmt -l .)"'
 
       # Cleanup
       - name: Cleanup
