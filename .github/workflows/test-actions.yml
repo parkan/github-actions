@@ -131,11 +131,11 @@ jobs:
           command: 'cd /workspaces/github-actions && go vet ./...'
           container-runtime: podman
 
-      - name: Run Go fmt check
+      - name: Check Go formatting
         uses: ./devcontainer-exec
         with:
           container-id: ${{ steps.build.outputs.container-id }}
-          command: 'cd /workspaces/github-actions && test -z "$$(gofmt -l .)"'
+          command: 'gofmt -l /workspaces/github-actions/testapp'
           container-runtime: podman
 
       - name: Cleanup devcontainer
