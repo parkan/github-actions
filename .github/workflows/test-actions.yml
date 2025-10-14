@@ -91,28 +91,14 @@ jobs:
           }
           EOF
 
-          # Create a simple Go project
+          # Create a simple Go project with proper formatting
           mkdir -p testapp
-          cat > testapp/main.go <<'GOEOF'
-package main
 
-import "fmt"
+          # Write properly formatted main.go
+          printf 'package main\n\nimport "fmt"\n\nfunc Hello() string { return "Hello, World!" }\nfunc main()          { fmt.Println(Hello()) }\n' > testapp/main.go
 
-func Hello() string { return "Hello, World!" }
-func main()          { fmt.Println(Hello()) }
-GOEOF
-
-          cat > testapp/main_test.go <<'GOEOF'
-package main
-
-import "testing"
-
-func TestHello(t *testing.T) {
-	if got := Hello(); got != "Hello, World!" {
-		t.Errorf("Hello() = %v, want %v", got, "Hello, World!")
-	}
-}
-GOEOF
+          # Write properly formatted main_test.go
+          printf 'package main\n\nimport "testing"\n\nfunc TestHello(t *testing.T) {\n\tif got := Hello(); got != "Hello, World!" {\n\t\tt.Errorf("Hello() = %%v, want %%v", got, "Hello, World!")\n\t}\n}\n' > testapp/main_test.go
 
           cat > go.mod <<EOF
           module testapp
